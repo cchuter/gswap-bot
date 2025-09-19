@@ -1,0 +1,24 @@
+{
+  "name": "gswap-test",
+  "version": "1.0.0",
+  "description": "GSwap SDK test program",
+  "main": "gswap.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx gswap.ts",
+    "dev": "tsx watch gswap.ts",
+    "build": "tsc",
+    "decrypt": "tsx decrypt.ts",
+    "pool-monitor": "tsx pool-monitor.ts"
+  },
+  "dependencies": {
+    "@gala-chain/gswap-sdk": "^0.0.7",
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
