@@ -89,6 +89,7 @@ Welcome to **Buffet Bot**, a Warren-Buffet-inspired "buy and hooooooolllllldddd"
 | `npm run build` | Type-checks and emits compiled JavaScript into `dist/` using the project `tsconfig.json`. |
 | `npm run decrypt` | Opens the interactive decrypt utility (`decrypt.ts`) to turn `PRIVATE_KEY_ENCRYPTED` + transfer code into a usable signer key. |
 | `npm run pool-monitor` | Executes `pool-monitor.ts`; pass `analyze` (default) for a snapshot report or `monitor` for long-running live swap detection. |
+| `npm run quote -- <amount> [giving receiving]` | Calls `scripts/quote-swap.ts` to fetch a live quote (defaults to GALA→GWBTC) and prints USD equivalents. Override CoinGecko IDs with `COINGECKO_<SYMBOL>_ID` if a token is missing. |
 | `npm run authorize-fee -- <amount>` | Calls `scripts/authorize-fee.ts` to mint fee credits. If you see `Fee amount must be a positive number`, rerun with a numeric amount, e.g. `npm run authorize-fee -- 1`. |
 | `npm run transfer -- <amount>` | Invokes `scripts/transfer-gala.ts` to send GALA to `TRANSFER_RECIPIENT`; requires fee credits on chain. |
 | `npm run fetch-swaps` | Hits the Gala explore API via `scripts/fetch-swaps.ts` and prints pools; see `scripts/README.md` for optional filters. |

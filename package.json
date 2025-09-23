@@ -10,6 +10,7 @@
     "build": "tsc",
     "decrypt": "tsx decrypt.ts",
     "pool-monitor": "tsx pool-monitor.ts",
+    "quote": "tsx scripts/quote-swap.ts",
     "authorize-fee": "tsx scripts/authorize-fee.ts",
     "transfer": "tsx scripts/transfer-gala.ts",
     "fetch-swaps": "tsx scripts/fetch-swaps.ts"
