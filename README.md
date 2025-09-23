@@ -1,165 +1,104 @@
-# GSwap SDK Integration with GALA Price Comparison
+# Buffet Bot 🐢
 
-A TypeScript application that integrates with the GSwap SDK to perform token swaps and compare GALA prices with CoinGecko.
+Welcome to **Buffet Bot**, a Warren-Buffet-inspired "buy and hooooooolllllldddd" automation for the GALA ↔ GWBTC pair. This bot keeps a long-term view: watch the market, act deliberately, and document every move. The tortoise wins the race.
 
-## Features
+## What It Does
 
-- 🔐 **Secure Private Key Management** - Encrypted private key storage with password protection
-- 💱 **GSwap Integration** - Direct integration with GSwap SDK for token swaps
-- 📊 **Price Comparison** - Real-time price comparison between GSwap and CoinGecko for GALA
-- 💰 **Arbitrage Detection** - Identifies potential arbitrage opportunities
-- 🔍 **Quote Analysis** - Detailed GALA/GWETH quote analysis with USD pricing comparisons
+- 🔄 **Simple Swap Runner** – Execute full-position swaps between GALA and GWBTC on demand using the GSwap SDK.
+- 📈 **Portfolio Console UI** – Live terminal dashboard showing balances, spot prices, USD markers, and a running PnL snapshot.
+- 🗂️ **Swap History Tracking** – Append-only JSONL log (`swap-history.log`) of every trade for auditability.
+- 🔐 **Key Handling Utilities** – Optional helper (`npm run decrypt`) to turn an encrypted Gala private key into a usable signer secret.
 
 ## Prerequisites
 
-- Node.js (v16 or higher)
-- npm or yarn
-- Gala Transfer Code (for private key decryption)
+- Node.js 20 LTS
+- npm
+- Gala wallet private key (encrypted or plain) and wallet address
 
-## Installation
+## Getting Started
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd gswap
-```
+1. **Clone & install**
 
-2. Install dependencies:
-```bash
-npm install
-```
+   ```bash
+   git clone <repository-url>
+   cd gswap-bot
+   npm install
+   ```
 
-3. Set up environment variables:
-```bash
-# Copy the example environment file
-cp .env.example .env
+2. **Configure environment**
 
-# Edit .env with your values
-PRIVATE_KEY_ENCRYPTED=your-encrypted-private-key
-WALLET_ADDRESS=your-wallet-address
-```
+   ```bash
+   cp .env.example .env
+   ```
 
-## Usage
+   Update `.env` with at least:
 
-### 1. Decrypt Your Private Key
+   - `WALLET_ADDRESS`
+   - `PRIVATE_KEY` *or* `PRIVATE_KEY_ENCRYPTED`
 
-First, decrypt your encrypted private key:
+   Optional knobs include refresh cadence, slippage, fee tier, and API base overrides. Check in-code defaults inside `gswap.ts` for the full list.
 
-```bash
-npm run decrypt
-```
+3. **(Optional) Decrypt your key**
 
-Enter your Gala Transfer Code when prompted. The utility will:
-- Decrypt your private key using XOR encryption
-- Test multiple key candidates automatically
-- Output the working private key for your `.env` file
+   ```bash
+   npm run decrypt
+   ```
 
-### 2. Run Price Analysis
+   Supply the encrypted blob and Gala Transfer Code; the script writes the decrypted key to stdout so you can paste it into `.env`.
 
-Get current GALA price analysis and comparison:
+4. **Launch the Buffet Bot console**
 
-```bash
-npm start
-```
+   ```bash
+   npm run start
+   ```
 
-This will:
-- Get a quote for swapping 10 GALA to GWETH
-- Fetch current GALA and ETH prices from CoinGecko
-- Compare GSwap vs CoinGecko prices
-- Show arbitrage opportunities if difference > 10%
-- Display implied USD-per-GALA pricing from both sources
+   or hot-reload during development:
 
-### 3. Development Mode
+   ```bash
+   npm run dev
+   ```
 
-Run in watch mode for development:
+   The terminal UI updates on the configured interval. Commands:
 
-```bash
-npm run dev
-```
+   - `start` – Move your entire GALA balance into GWBTC.
+   - `stop` – Move your entire GWBTC balance back into GALA.
+   - `refresh` – Force an immediate data refresh.
 
-## Environment Variables
+   Every swap attempt is logged and PnL is recalculated on each redraw so you always know how diamond-handed Buffet Bot really is.
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `PRIVATE_KEY_ENCRYPTED` | Your encrypted private key (base64) | Yes |
-| `WALLET_ADDRESS` | Your wallet address | Yes |
-| `PRIVATE_KEY` | Decrypted private key (set by decrypt utility) | Yes |
+## Environment Reference
 
-## Scripts
+| Variable | Purpose | Required |
+| -------- | ------- | -------- |
+| `WALLET_ADDRESS` | Wallet to manage | ✅ |
+| `PRIVATE_KEY` | Plain signer key | ✅* |
+| `PRIVATE_KEY_ENCRYPTED` | Encrypted key consumed by `npm run decrypt` | ✅* |
+| `GALA_TUI_REFRESH_MS` | UI refresh interval (ms) | Optional |
+| `GALA_WBTC_SLIPPAGE_BPS` | Slippage guardrail in basis points | Optional |
+| `GALA_WBTC_FEE` | Pool fee tier if you want to override the default | Optional |
+| `GALA_SWAP_LOG` | Alternate path for swap history | Optional |
+
+`*` Provide either `PRIVATE_KEY` directly or keep `PRIVATE_KEY_ENCRYPTED` alongside the decrypt script output.
+
+## Available Scripts
 
 | Script | Description |
-|--------|-------------|
-| `npm start` | Run price analysis and comparison |
-| `npm run dev` | Run in development mode with auto-restart |
-| `npm run decrypt` | Decrypt private key utility |
-| `npm run build` | Build TypeScript to JavaScript |
+| ------ | ----------- |
+| `npm run start` | Runs `gswap.ts` in production mode; continuously checks the GALA ↔ GWETH pool and logs arbitrage signals to `gswap.log`. |
+| `npm run dev` | Launches the arbitrage monitor with `tsx watch` so code changes reload automatically. |
+| `npm run build` | Type-checks and emits compiled JavaScript into `dist/` using the project `tsconfig.json`. |
+| `npm run decrypt` | Opens the interactive decrypt utility (`decrypt.ts`) to turn `PRIVATE_KEY_ENCRYPTED` + transfer code into a usable signer key. |
+| `npm run pool-monitor` | Executes `pool-monitor.ts`; pass `analyze` (default) for a snapshot report or `monitor` for long-running live swap detection. |
+| `npm run authorize-fee -- <amount>` | Calls `scripts/authorize-fee.ts` to mint fee credits. If you see `Fee amount must be a positive number`, rerun with a numeric amount, e.g. `npm run authorize-fee -- 1`. |
+| `npm run transfer -- <amount>` | Invokes `scripts/transfer-gala.ts` to send GALA to `TRANSFER_RECIPIENT`; requires fee credits on chain. |
+| `npm run fetch-swaps` | Hits the Gala explore API via `scripts/fetch-swaps.ts` and prints pools; see `scripts/README.md` for optional filters. |
 
-## Features Explained
+## Safety Notes
 
-### Private Key Security
-- Private keys are encrypted using XOR encryption
-- Password-protected decryption process
-- Automatic key validation and testing
-
-### Price Comparison
-- Real-time GALA price from GSwap
-- CoinGecko API integration for market price
-- Percentage difference calculation
-- Arbitrage opportunity detection
-
-### Quote Analysis
-- Calculates implied USD price per GALA from GSwap GALA->GWETH quotes
-- Uses CoinGecko GALA and ETH data as the market reference
-- Reports the percentage difference between implied and market prices
-- Logs swap iterations and highlights notable movements
-
-## API Endpoints Used
-
-- **GSwap SDK**: For token quotes and swaps
-- **CoinGecko API**: For market price data
-  - Endpoint: `https://api.coingecko.com/api/v3/simple/price`
-  - Parameters: `ids=ethereum,gala&vs_currencies=usd`
-
-## Security Notes
-
-- Never commit your `.env` file to version control
-- The `.gitignore` file excludes sensitive files
-- Private keys are encrypted and require password for decryption
-- All API calls use timeouts to prevent hanging
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"No PRIVATE_KEY_ENCRYPTED found"**
-   - Add your encrypted private key to `.env` file
-
-2. **"Failed to decode base64"**
-   - Ensure your encrypted key is properly base64 encoded
-
-3. **"No working private key found"**
-   - Check your Gala Transfer Code
-   - Ensure the encrypted key is correct
-
-4. **CoinGecko API errors**
-   - Network connectivity issues
-   - API rate limiting (free tier)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+- Never commit `.env` or raw keys.
+- Keep the machine running Buffet Bot secure; swaps execute with your wallet authority.
+- Rotate credentials regularly; document required variables in `docs/configuration.md` if you change them.
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Review the CoinGecko API documentation
-- Check GSwap SDK documentation 
+Apache 2.0

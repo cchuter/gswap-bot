@@ -9,11 +9,16 @@
     "dev": "tsx watch gswap.ts",
     "build": "tsc",
     "decrypt": "tsx decrypt.ts",
-    "pool-monitor": "tsx pool-monitor.ts"
+    "pool-monitor": "tsx pool-monitor.ts",
+    "authorize-fee": "tsx scripts/authorize-fee.ts",
+    "transfer": "tsx scripts/transfer-gala.ts",
+    "fetch-swaps": "tsx scripts/fetch-swaps.ts"
   },
   "dependencies": {
     "@gala-chain/gswap-sdk": "^0.0.7",
+    "@gala-chain/api": "^2.4.2",
     "axios": "^1.11.0",
+    "bignumber.js": "^9.3.1",
     "dotenv": "^17.2.1"
   },
   "devDependencies": {

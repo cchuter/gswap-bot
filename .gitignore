@@ -91,6 +91,10 @@ jspm_packages/
 # TernJS port file
 .tern-port
 
+# temporyary files
+tmp/
+temp/
+
 # GSwap runtime artifacts
 pool-data-*.json
 gswap.log
