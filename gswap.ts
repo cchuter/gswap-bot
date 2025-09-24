@@ -17,6 +17,7 @@ const UPDATE_INTERVAL_MS = Number(process.env.GALA_TUI_REFRESH_MS ?? '60000');
 const BALANCE_PAGE_SIZE = Number(process.env.GALA_BALANCE_PAGE_SIZE ?? '20');
 const TOKEN_API_BASE = process.env.GALA_TOKEN_API_BASE ?? 'https://api-galaswap.gala.com';
 const LOG_PATH = process.env.GALA_SWAP_LOG ?? 'swap-history.log';
+const ACTIVITY_LOG_PATH = process.env.GALA_ACTIVITY_LOG ?? 'gswap.log';
 
 if (!Number.isFinite(UPDATE_INTERVAL_MS) || UPDATE_INTERVAL_MS <= 0) {
   throw new Error('GALA_TUI_REFRESH_MS must be a positive number');
@@ -97,6 +98,22 @@ function createEmptyPnl(): PortfolioPnl {
   };
 }
 
+function appendActivityLog(message: string, details?: Record<string, unknown>): void {
+  const timestamp = new Date().toISOString();
+  const entry = {
+    timestamp,
+    message,
+    ...(details ? { details } : {}),
+  };
+
+  fs.appendFile(ACTIVITY_LOG_PATH, `${JSON.stringify(entry)}\n`, (err) => {
+    if (err) {
+      console.error('Failed to write activity log:', err instanceof Error ? err.message : String(err));
+    }
+  });
+}
+
+
 function renderTui(
   balances: { gala: BigNumber; wbtc: BigNumber },
   priceInfo: PriceInfo | null,
@@ -171,6 +188,7 @@ function renderTui(
   console.log('  start               - swap all GALA into GWBTC');
   console.log('  stop                - swap all GWBTC into GALA');
   console.log('  refresh             - force immediate refresh');
+  console.log('  dexbuy <gala>       - create RequestTokenSwap via GalaConnect');
   console.log('\nRefresh interval: ' + UPDATE_INTERVAL_MS / 1000 + 's (Ctrl+C to exit)');
 }
 
@@ -341,6 +359,69 @@ async function quoteSwap(
   };
 }
 
+async function submitDexBuySwap(
+  gSwap: GSwap,
+  galaAddress: string,
+  amountIn: BigNumber
+) {
+  const { amountOut, price } = await quoteSwap(gSwap, GALA_TOKEN, WBTC_TOKEN, amountIn);
+  const slipMultiplier = new BigNumber(1).minus(SLIPPAGE_DECIMAL);
+  const amountInString = amountIn.decimalPlaces(8, BigNumber.ROUND_FLOOR).toString();
+  const minOut = amountOut.multipliedBy(slipMultiplier);
+  const minOutString = minOut.decimalPlaces(8, BigNumber.ROUND_FLOOR).toString();
+
+  appendActivityLog('swap_submitted', {
+    direction: 'dexbuy',
+    amountIn: amountInString,
+    minAmountOut: minOutString,
+    feeTier: DEFAULT_FEE,
+  });
+
+  const pendingTx = await gSwap.swaps.swap(
+    GALA_TOKEN,
+    WBTC_TOKEN,
+    DEFAULT_FEE,
+    {
+      exactIn: amountInString,
+      amountOutMinimum: minOutString,
+    },
+    galaAddress
+  );
+
+  const receipt = await pendingTx.wait();
+
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    direction: 'dexbuy' as const,
+    amountIn: amountInString,
+    quotedAmountOut: amountOut.toString(),
+    minAmountOut: minOutString,
+    price: price.toString(),
+    feeTier: DEFAULT_FEE,
+    slippageBps: clampedSlippage,
+    txId: (receipt as any)?.txId ?? null,
+    transactionHash: (receipt as any)?.transactionHash ?? null,
+    walletAddress: galaAddress,
+  };
+
+  fs.appendFile(LOG_PATH, JSON.stringify(logEntry) + '\n', (err) => {
+    if (err) {
+      console.error('Failed to write swap log:', err.message ?? err);
+    }
+  });
+
+  appendActivityLog('swap_confirmed', {
+    direction: 'dexbuy',
+    amountIn: amountInString,
+    quotedAmountOut: amountOut.toString(),
+    minAmountOut: minOutString,
+    transactionHash: (receipt as any)?.transactionHash ?? null,
+    txId: (receipt as any)?.txId ?? null,
+  });
+
+  return { receipt, amountOut, minOut };
+}
+
 async function main(): Promise<void> {
   const walletAddress = requireEnv(WALLET_ADDRESS, 'WALLET_ADDRESS');
   const privateKey = requireEnv(PRIVATE_KEY, 'PRIVATE_KEY');
@@ -348,6 +429,15 @@ async function main(): Promise<void> {
   const gSwap = new GSwap({
     signer: new PrivateKeySigner(privateKey),
   });
+
+  try {
+    if (!GSwap.events.eventSocketConnected()) {
+      await GSwap.events.connectEventSocket(gSwap.bundlerBaseUrl);
+    }
+  } catch (error) {
+    console.error('Failed to establish GSwap socket connection:', error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
 
   const galaAddress = resolveGalaAddress(walletAddress);
 
@@ -421,11 +511,119 @@ async function main(): Promise<void> {
       return;
     }
 
-    const [command] = trimmed.split(/\s+/);
+    const parts = trimmed.split(/\s+/);
+    const command = parts[0];
+    const args = parts.slice(1);
 
     if (command === 'refresh') {
       lastCommandMessage = 'Manual refresh requested.';
       await refresh();
+      return;
+    }
+
+    if (command === 'dexbuy') {
+      const amountArg = args[0];
+      if (!amountArg) {
+        lastCommandMessage = 'Usage: dexbuy <galaAmount>';
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+        return;
+      }
+
+      const dexAmount = new BigNumber(amountArg);
+      if (!dexAmount.isFinite() || dexAmount.lte(0)) {
+        lastCommandMessage = 'Invalid amount. Provide a positive number of GALA to sell.';
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+        return;
+      }
+
+      if (dexAmount.gt(latestBalances.gala)) {
+        lastCommandMessage = `Insufficient GALA balance. Available: ${formatAmount(latestBalances.gala)} GALA`;
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+        return;
+      }
+
+      if (swapInProgress) {
+        lastCommandMessage = 'Swap already in progress. Please wait...';
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+        return;
+      }
+
+      swapInProgress = true;
+      renderTui(
+        latestBalances,
+        latestPrices,
+        latestUsdPrices,
+        latestPnl,
+        lastBalanceError,
+        lastPriceError,
+        lastUsdError,
+        'Submitting DEX swap...',
+        swapInProgress
+      );
+
+      try {
+        const submission = await submitDexBuySwap(gSwap, galaAddress, dexAmount);
+        const txHash = (submission.receipt as any)?.transactionHash ?? (submission.receipt as any)?.txId ?? 'unknown';
+        lastCommandMessage = `DEX swap confirmed. Tx: ${txHash}`;
+        await refresh();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        lastCommandMessage = `DEX swap failed: ${message}`;
+      } finally {
+        swapInProgress = false;
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+      }
+
       return;
     }
 
@@ -506,6 +704,15 @@ async function main(): Promise<void> {
       const decimals = outputSymbol === 'GALA' || outputSymbol === 'GWBTC' ? 8 : 18;
       const minOutString = minOut.decimalPlaces(decimals, BigNumber.ROUND_FLOOR).toString();
 
+      appendActivityLog('swap_submitted', {
+        direction: command,
+        amountIn: amount.toString(),
+        tokenIn,
+        tokenOut,
+        minAmountOut: minOutString,
+        feeTier: DEFAULT_FEE,
+      });
+
       const pendingTx = await gSwap.swaps.swap(
         tokenIn,
         tokenOut,
@@ -551,9 +758,47 @@ async function main(): Promise<void> {
         }
       });
 
+      appendActivityLog('swap_confirmed', {
+        direction: command,
+        amountIn: amount.toString(),
+        quotedAmountOut: amountOut.toString(),
+        minAmountOut: minOutString,
+        transactionHash: (receipt as any)?.transactionHash ?? null,
+        txId: (receipt as any)?.txId ?? null,
+      });
+
       lastCommandMessage = `Swap confirmed. Tx: ${(receipt as any)?.transactionHash ?? (receipt as any)?.txId ?? 'unknown'}`;
       await refresh();
     } catch (error) {
+      const baseErrorDetails: Record<string, unknown> = {
+        direction: command,
+        amountIn: amount.toString(),
+        tokenIn,
+        tokenOut,
+      };
+
+      if (error instanceof Error) {
+        baseErrorDetails.message = error.message;
+        if (error.stack) {
+          baseErrorDetails.stack = error.stack;
+        }
+      } else {
+        baseErrorDetails.message = String(error);
+      }
+
+      if (typeof (error as any)?.code === 'string') {
+        baseErrorDetails.code = (error as any).code;
+      }
+
+      if (typeof (error as any)?.response === 'object') {
+        baseErrorDetails.response = {
+          status: (error as any).response?.status,
+          data: (error as any).response?.data,
+        };
+      }
+
+      appendActivityLog('swap_failed', baseErrorDetails);
+
       lastCommandMessage = `Swap failed: ${error instanceof Error ? error.message : String(error)}`;
       await refresh();
     } finally {
@@ -581,6 +826,9 @@ async function main(): Promise<void> {
   const cleanup = () => {
     clearInterval(interval);
     rl.close();
+    if (GSwap.events.eventSocketConnected()) {
+      GSwap.events.disconnectEventSocket();
+    }
     process.exit(0);
   };
 

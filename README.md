@@ -77,6 +77,8 @@ Welcome to **Buffet Bot**, a Warren-Buffet-inspired "buy and hooooooolllllldddd"
 | `GALA_WBTC_SLIPPAGE_BPS` | Slippage guardrail in basis points | Optional |
 | `GALA_WBTC_FEE` | Pool fee tier if you want to override the default | Optional |
 | `GALA_SWAP_LOG` | Alternate path for swap history | Optional |
+| `GALA_ACTIVITY_LOG` | Path for detailed swap activity logs | Optional |
+| `GALA_CONNECT_SWAP_LOG` | File to append GalaConnect swap submissions | Optional |
 
 `*` Provide either `PRIVATE_KEY` directly or keep `PRIVATE_KEY_ENCRYPTED` alongside the decrypt script output.
 
@@ -90,7 +92,10 @@ Welcome to **Buffet Bot**, a Warren-Buffet-inspired "buy and hooooooolllllldddd"
 | `npm run decrypt` | Opens the interactive decrypt utility (`decrypt.ts`) to turn `PRIVATE_KEY_ENCRYPTED` + transfer code into a usable signer key. |
 | `npm run pool-monitor` | Executes `pool-monitor.ts`; pass `analyze` (default) for a snapshot report or `monitor` for long-running live swap detection. |
 | `npm run quote -- <amount> [giving receiving]` | Calls `scripts/quote-swap.ts` to fetch a live quote (defaults to GALA→GWBTC) and prints USD equivalents. Override CoinGecko IDs with `COINGECKO_<SYMBOL>_ID` if a token is missing. |
-| `npm run authorize-fee -- <amount>` | Calls `scripts/authorize-fee.ts` to mint fee credits. If you see `Fee amount must be a positive number`, rerun with a numeric amount, e.g. `npm run authorize-fee -- 1`. |
+| `npm run authorize-fee -- <amount>` | Calls `scripts/authorize-fee.ts` to mint fee credits via `/v1/channels/<channel>/AuthorizeFee`. |
+| `npm run check-fee -- <giving> <receiving> '<givingToken>' '<receivingToken>' [uses]` | Calls `scripts/check-fee.ts` to hit `/v1/RequestTokenSwap/fee` and report the chain fee for your swap payload (omit signature/uniqueKey per docs). Wrap token class keys in quotes so the shell does not treat `|` as a pipe. |
+| `npm run request-swap -- <giving> <receiving> '<givingToken>' '<receivingToken>' [uses]` | Uses `scripts/request-token-swap.ts` to sign and submit `/v1/RequestTokenSwap` with your wallet credentials. Wrap token class keys in quotes. |
+| `npm run terminate-swap -- <swapRequestId>` | Calls `scripts/terminate-token-swap.ts` to sign and submit `/v1/TerminateTokenSwap` for an existing request. Escape backslashes (e.g. `"\\u0000..."`) or prefix with `base64:` if the ID contains control characters. |
 | `npm run transfer -- <amount>` | Invokes `scripts/transfer-gala.ts` to send GALA to `TRANSFER_RECIPIENT`; requires fee credits on chain. |
 | `npm run fetch-swaps` | Hits the Gala explore API via `scripts/fetch-swaps.ts` and prints pools; see `scripts/README.md` for optional filters. |
 
@@ -98,7 +103,6 @@ Welcome to **Buffet Bot**, a Warren-Buffet-inspired "buy and hooooooolllllldddd"
 
 - Never commit `.env` or raw keys.
 - Keep the machine running Buffet Bot secure; swaps execute with your wallet authority.
-- Rotate credentials regularly; document required variables in `docs/configuration.md` if you change them.
 
 ## License
 

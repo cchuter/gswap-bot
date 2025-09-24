@@ -12,6 +12,9 @@
     "pool-monitor": "tsx pool-monitor.ts",
     "quote": "tsx scripts/quote-swap.ts",
     "authorize-fee": "tsx scripts/authorize-fee.ts",
+    "check-fee": "tsx scripts/check-fee.ts",
+    "request-swap": "tsx scripts/request-token-swap.ts",
+    "terminate-swap": "tsx scripts/terminate-token-swap.ts",
     "transfer": "tsx scripts/transfer-gala.ts",
     "fetch-swaps": "tsx scripts/fetch-swaps.ts"
   },
@@ -20,7 +23,11 @@
     "@gala-chain/api": "^2.4.2",
     "axios": "^1.11.0",
     "bignumber.js": "^9.3.1",
-    "dotenv": "^17.2.1"
+    "dotenv": "^17.2.1",
+    "elliptic": "^6.5.7",
+    "ethers": "^6.11.1",
+    "js-sha3": "^0.9.3",
+    "json-stringify-deterministic": "^1.0.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
