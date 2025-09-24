@@ -84,6 +84,7 @@ interface PortfolioPnl {
   realizedUsd: BigNumber;
   unrealizedUsd: BigNumber;
   netCostUsd: BigNumber;
+  manualAdjustmentUsd: BigNumber;
 }
 
 function createEmptyPnl(): PortfolioPnl {
@@ -95,6 +96,7 @@ function createEmptyPnl(): PortfolioPnl {
     realizedUsd: new BigNumber(0),
     unrealizedUsd: new BigNumber(0),
     netCostUsd: new BigNumber(0),
+    manualAdjustmentUsd: new BigNumber(0),
   };
 }
 
@@ -172,8 +174,12 @@ function renderTui(
 
   console.log('\nPnL:');
   console.log(`- Realized PnL: $${formatAmount(pnl.realizedUsd, 2)}`);
-  console.log(`- Unrealized PnL (current holdings): $${formatAmount(totalHoldingsUsd.minus(pnl.netCostUsd), 2)}`);
+  const adjustedUnrealized = totalHoldingsUsd.minus(pnl.netCostUsd).minus(pnl.manualAdjustmentUsd);
+  console.log(`- Unrealized PnL (current holdings): $${formatAmount(adjustedUnrealized, 2)}`);
   console.log(`- Net hold cost: $${formatAmount(pnl.netCostUsd, 2)}`);
+  if (!pnl.manualAdjustmentUsd.isZero()) {
+    console.log(`- Adjustment: $${formatAmount(pnl.manualAdjustmentUsd, 2)} (manual)`);
+  }
   console.log(`- Current portfolio value: $${formatAmount(totalHoldingsUsd, 2)}`);
 
   if (lastCommandMessage) {
@@ -337,8 +343,10 @@ function computePnl(entries: SwapLogEntry[], usdPrices: UsdPrices): PortfolioPnl
   const holdingsUsd = galaValue.plus(wbtcValue);
 
   result.realizedUsd = realizedUsd;
-  result.unrealizedUsd = holdingsUsd.plus(netCostUsd);
+  const manualAdjustment = new BigNumber(500);
+  result.unrealizedUsd = holdingsUsd.plus(netCostUsd).minus(manualAdjustment);
   result.netCostUsd = netCostUsd;
+  result.manualAdjustmentUsd = manualAdjustment;
 
   return result;
 }
