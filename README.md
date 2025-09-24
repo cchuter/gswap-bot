@@ -60,8 +60,8 @@ Welcome to **Buffet Bot**, a Warren-Buffet-inspired "buy and hooooooolllllldddd"
 
    The terminal UI updates on the configured interval. Commands:
 
-   - `start` – Move your entire GALA balance into GWBTC.
-   - `stop` – Move your entire GWBTC balance back into GALA.
+   - `dexbuy <gala>` – Swap a specified GALA amount into GWBTC via the pool.
+   - `dexsell <gwbtc>` – Swap a specified GWBTC amount back into GALA.
    - `refresh` – Force an immediate data refresh.
 
    Every swap attempt is logged and PnL is recalculated on each redraw so you always know how diamond-handed Buffet Bot really is.

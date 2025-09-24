@@ -185,10 +185,9 @@ function renderTui(
   }
 
   console.log('\nCommands:');
-  console.log('  start               - swap all GALA into GWBTC');
-  console.log('  stop                - swap all GWBTC into GALA');
   console.log('  refresh             - force immediate refresh');
   console.log('  dexbuy <gala>       - swap GALA → GWBTC using the DEX pool');
+  console.log('  dexsell <gwbtc>     - swap GWBTC → GALA using the DEX pool');
   console.log('\nRefresh interval: ' + UPDATE_INTERVAL_MS / 1000 + 's (Ctrl+C to exit)');
 }
 
@@ -371,7 +370,7 @@ async function submitDexBuySwap(
   const minOutString = minOut.decimalPlaces(8, BigNumber.ROUND_FLOOR).toString();
 
   appendActivityLog('swap_submitted', {
-    direction: 'dexbuy',
+    direction: 'start',
     amountIn: amountInString,
     minAmountOut: minOutString,
     feeTier: DEFAULT_FEE,
@@ -392,7 +391,7 @@ async function submitDexBuySwap(
 
   const logEntry = {
     timestamp: new Date().toISOString(),
-    direction: 'dexbuy' as const,
+    direction: 'start' as const,
     amountIn: amountInString,
     quotedAmountOut: amountOut.toString(),
     minAmountOut: minOutString,
@@ -411,7 +410,70 @@ async function submitDexBuySwap(
   });
 
   appendActivityLog('swap_confirmed', {
-    direction: 'dexbuy',
+    direction: 'start',
+    amountIn: amountInString,
+    quotedAmountOut: amountOut.toString(),
+    minAmountOut: minOutString,
+    transactionHash: (receipt as any)?.transactionHash ?? null,
+    txId: (receipt as any)?.txId ?? null,
+  });
+
+  return { receipt, amountOut, minOut };
+}
+
+async function submitDexSellSwap(
+  gSwap: GSwap,
+  galaAddress: string,
+  amountIn: BigNumber
+) {
+  const { amountOut, price } = await quoteSwap(gSwap, WBTC_TOKEN, GALA_TOKEN, amountIn);
+  const slipMultiplier = new BigNumber(1).minus(SLIPPAGE_DECIMAL);
+  const amountInString = amountIn.decimalPlaces(8, BigNumber.ROUND_FLOOR).toString();
+  const minOut = amountOut.multipliedBy(slipMultiplier);
+  const minOutString = minOut.decimalPlaces(8, BigNumber.ROUND_FLOOR).toString();
+
+  appendActivityLog('swap_submitted', {
+    direction: 'stop',
+    amountIn: amountInString,
+    minAmountOut: minOutString,
+    feeTier: DEFAULT_FEE,
+  });
+
+  const pendingTx = await gSwap.swaps.swap(
+    WBTC_TOKEN,
+    GALA_TOKEN,
+    DEFAULT_FEE,
+    {
+      exactIn: amountInString,
+      amountOutMinimum: minOutString,
+    },
+    galaAddress
+  );
+
+  const receipt = await pendingTx.wait();
+
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    direction: 'stop' as const,
+    amountIn: amountInString,
+    quotedAmountOut: amountOut.toString(),
+    minAmountOut: minOutString,
+    price: price.toString(),
+    feeTier: DEFAULT_FEE,
+    slippageBps: clampedSlippage,
+    txId: (receipt as any)?.txId ?? null,
+    transactionHash: (receipt as any)?.transactionHash ?? null,
+    walletAddress: galaAddress,
+  };
+
+  fs.appendFile(LOG_PATH, JSON.stringify(logEntry) + '\n', (err) => {
+    if (err) {
+      console.error('Failed to write swap log:', err.message ?? err);
+    }
+  });
+
+  appendActivityLog('swap_confirmed', {
+    direction: 'stop',
     amountIn: amountInString,
     quotedAmountOut: amountOut.toString(),
     minAmountOut: minOutString,
@@ -505,130 +567,29 @@ async function main(): Promise<void> {
 
   const interval = setInterval(refresh, UPDATE_INTERVAL_MS);
 
-  const handleCommand = async (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return;
-    }
 
-    const parts = trimmed.split(/\s+/);
-    const command = parts[0];
-    const args = parts.slice(1);
+const handleCommand = async (line: string) => {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return;
+  }
 
-    if (command === 'refresh') {
-      lastCommandMessage = 'Manual refresh requested.';
-      await refresh();
-      return;
-    }
+  const parts = trimmed.split(/\s+/);
+  const command = parts[0];
+  const args = parts.slice(1);
 
-    if (command === 'dexbuy') {
-      const amountArg = args[0];
-      if (!amountArg) {
-        lastCommandMessage = 'Usage: dexbuy <galaAmount>';
-        renderTui(
-          latestBalances,
-          latestPrices,
-          latestUsdPrices,
-          latestPnl,
-          lastBalanceError,
-          lastPriceError,
-          lastUsdError,
-          lastCommandMessage,
-          swapInProgress
-        );
-        return;
-      }
+  if (command === 'refresh') {
+    lastCommandMessage = 'Manual refresh requested.';
+    await refresh();
+    return;
+  }
 
-      const dexAmount = new BigNumber(amountArg);
-      if (!dexAmount.isFinite() || dexAmount.lte(0)) {
-        lastCommandMessage = 'Invalid amount. Provide a positive number of GALA to sell.';
-        renderTui(
-          latestBalances,
-          latestPrices,
-          latestUsdPrices,
-          latestPnl,
-          lastBalanceError,
-          lastPriceError,
-          lastUsdError,
-          lastCommandMessage,
-          swapInProgress
-        );
-        return;
-      }
-
-      if (dexAmount.gt(latestBalances.gala)) {
-        lastCommandMessage = `Insufficient GALA balance. Available: ${formatAmount(latestBalances.gala)} GALA`;
-        renderTui(
-          latestBalances,
-          latestPrices,
-          latestUsdPrices,
-          latestPnl,
-          lastBalanceError,
-          lastPriceError,
-          lastUsdError,
-          lastCommandMessage,
-          swapInProgress
-        );
-        return;
-      }
-
-      if (swapInProgress) {
-        lastCommandMessage = 'Swap already in progress. Please wait...';
-        renderTui(
-          latestBalances,
-          latestPrices,
-          latestUsdPrices,
-          latestPnl,
-          lastBalanceError,
-          lastPriceError,
-          lastUsdError,
-          lastCommandMessage,
-          swapInProgress
-        );
-        return;
-      }
-
-      swapInProgress = true;
-      renderTui(
-        latestBalances,
-        latestPrices,
-        latestUsdPrices,
-        latestPnl,
-        lastBalanceError,
-        lastPriceError,
-        lastUsdError,
-        'Submitting DEX swap...',
-        swapInProgress
-      );
-
-      try {
-        const submission = await submitDexBuySwap(gSwap, galaAddress, dexAmount);
-        const txHash = (submission.receipt as any)?.transactionHash ?? (submission.receipt as any)?.txId ?? 'unknown';
-        lastCommandMessage = `DEX swap confirmed. Tx: ${txHash}`;
-        await refresh();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        lastCommandMessage = `DEX swap failed: ${message}`;
-      } finally {
-        swapInProgress = false;
-        renderTui(
-          latestBalances,
-          latestPrices,
-          latestUsdPrices,
-          latestPnl,
-          lastBalanceError,
-          lastPriceError,
-          lastUsdError,
-          lastCommandMessage,
-          swapInProgress
-        );
-      }
-
-      return;
-    }
-
-    if (command !== 'start' && command !== 'stop') {
-      lastCommandMessage = `Unknown command: ${command}`;
+  if (command === 'dexbuy' || command === 'dexsell') {
+    const amountArg = args[0];
+    if (!amountArg) {
+      lastCommandMessage = command === 'dexbuy'
+        ? 'Usage: dexbuy <galaAmount>'
+        : 'Usage: dexsell <gwbtcAmount>';
       renderTui(
         latestBalances,
         latestPrices,
@@ -641,6 +602,57 @@ async function main(): Promise<void> {
         swapInProgress
       );
       return;
+    }
+
+    const dexAmount = new BigNumber(amountArg);
+    if (!dexAmount.isFinite() || dexAmount.lte(0)) {
+      lastCommandMessage = 'Invalid amount. Provide a positive number.';
+      renderTui(
+        latestBalances,
+        latestPrices,
+        latestUsdPrices,
+        latestPnl,
+        lastBalanceError,
+        lastPriceError,
+        lastUsdError,
+        lastCommandMessage,
+        swapInProgress
+      );
+      return;
+    }
+
+      if (command === 'dexbuy') {
+        if (dexAmount.gt(latestBalances.gala)) {
+          lastCommandMessage = `Insufficient GALA balance. Available: ${formatAmount(latestBalances.gala)} GALA`;
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+        return;
+      }
+      } else {
+        if (dexAmount.gt(latestBalances.wbtc)) {
+          lastCommandMessage = `Insufficient GWBTC balance. Available: ${formatAmount(latestBalances.wbtc)} GWBTC`;
+        renderTui(
+          latestBalances,
+          latestPrices,
+          latestUsdPrices,
+          latestPnl,
+          lastBalanceError,
+          lastPriceError,
+          lastUsdError,
+          lastCommandMessage,
+          swapInProgress
+        );
+        return;
+      }
     }
 
     if (swapInProgress) {
@@ -668,139 +680,29 @@ async function main(): Promise<void> {
       lastBalanceError,
       lastPriceError,
       lastUsdError,
-      'Processing swap...',
+      'Submitting DEX swap...',
       swapInProgress
     );
 
-    const tokenIn = command === 'start' ? GALA_TOKEN : WBTC_TOKEN;
-    const tokenOut = command === 'start' ? WBTC_TOKEN : GALA_TOKEN;
-    const inputSymbol = command === 'start' ? 'GALA' : 'GWBTC';
-    const outputSymbol = command === 'start' ? 'GWBTC' : 'GALA';
-
-    const amount = command === 'start' ? latestBalances.gala : latestBalances.wbtc;
-
-    if (amount.lte(0)) {
-      lastCommandMessage = `No ${inputSymbol} balance available to swap.`;
-      swapInProgress = false;
-      renderTui(
-        latestBalances,
-        latestPrices,
-        latestUsdPrices,
-        latestPnl,
-        lastBalanceError,
-        lastPriceError,
-        lastUsdError,
-        lastCommandMessage,
-        swapInProgress
-      );
-      return;
-    }
-
     try {
-      const { amountOut, price } = await quoteSwap(gSwap, tokenIn, tokenOut, amount);
-      const slipMultiplier = new BigNumber(1).minus(SLIPPAGE_DECIMAL);
-      const minOut = amountOut.multipliedBy(slipMultiplier);
-
-      const decimals = outputSymbol === 'GALA' || outputSymbol === 'GWBTC' ? 8 : 18;
-      const minOutString = minOut.decimalPlaces(decimals, BigNumber.ROUND_FLOOR).toString();
-
-      appendActivityLog('swap_submitted', {
-        direction: command,
-        amountIn: amount.toString(),
-        tokenIn,
-        tokenOut,
-        minAmountOut: minOutString,
-        feeTier: DEFAULT_FEE,
-      });
-
-      const pendingTx = await gSwap.swaps.swap(
-        tokenIn,
-        tokenOut,
-        DEFAULT_FEE,
-        {
-          exactIn: amount.toString(),
-          amountOutMinimum: minOutString,
-        },
-        galaAddress
-      );
-
-      lastCommandMessage = 'Swap submitted. Waiting for confirmation...';
-      renderTui(
-        latestBalances,
-        latestPrices,
-        latestUsdPrices,
-        latestPnl,
-        lastBalanceError,
-        lastPriceError,
-        lastUsdError,
-        lastCommandMessage,
-        swapInProgress
-      );
-
-      const receipt = await pendingTx.wait();
-
-      const logEntry = {
-        timestamp: new Date().toISOString(),
-        direction: command,
-        amountIn: amount.toString(),
-        quotedAmountOut: amountOut.toString(),
-        minAmountOut: minOutString,
-        price: price.toString(),
-        feeTier: DEFAULT_FEE,
-        slippageBps: clampedSlippage,
-        txId: (receipt as any)?.txId ?? null,
-        transactionHash: (receipt as any)?.transactionHash ?? null,
-        walletAddress: galaAddress,
-      };
-      fs.appendFile(LOG_PATH, JSON.stringify(logEntry) + '\n', (err) => {
-        if (err) {
-          console.error('Failed to write swap log:', err.message ?? err);
-        }
-      });
-
-      appendActivityLog('swap_confirmed', {
-        direction: command,
-        amountIn: amount.toString(),
-        quotedAmountOut: amountOut.toString(),
-        minAmountOut: minOutString,
-        transactionHash: (receipt as any)?.transactionHash ?? null,
-        txId: (receipt as any)?.txId ?? null,
-      });
-
-      lastCommandMessage = `Swap confirmed. Tx: ${(receipt as any)?.transactionHash ?? (receipt as any)?.txId ?? 'unknown'}`;
+      if (command === 'dexbuy') {
+        const submission = await submitDexBuySwap(gSwap, galaAddress, dexAmount);
+        const txHash = (submission.receipt as any)?.transactionHash ?? (submission.receipt as any)?.txId ?? 'unknown';
+        lastCommandMessage = `GALA→GWBTC swap confirmed. Tx: ${txHash}`;
+      } else {
+        const submission = await submitDexSellSwap(gSwap, galaAddress, dexAmount);
+        const txHash = (submission.receipt as any)?.transactionHash ?? (submission.receipt as any)?.txId ?? 'unknown';
+        lastCommandMessage = `GWBTC→GALA swap confirmed. Tx: ${txHash}`;
+      }
       await refresh();
     } catch (error) {
-      const baseErrorDetails: Record<string, unknown> = {
-        direction: command,
-        amountIn: amount.toString(),
-        tokenIn,
-        tokenOut,
-      };
-
-      if (error instanceof Error) {
-        baseErrorDetails.message = error.message;
-        if (error.stack) {
-          baseErrorDetails.stack = error.stack;
-        }
-      } else {
-        baseErrorDetails.message = String(error);
-      }
-
-      if (typeof (error as any)?.code === 'string') {
-        baseErrorDetails.code = (error as any).code;
-      }
-
-      if (typeof (error as any)?.response === 'object') {
-        baseErrorDetails.response = {
-          status: (error as any).response?.status,
-          data: (error as any).response?.data,
-        };
-      }
-
-      appendActivityLog('swap_failed', baseErrorDetails);
-
-      lastCommandMessage = `Swap failed: ${error instanceof Error ? error.message : String(error)}`;
-      await refresh();
+      const message = error instanceof Error ? error.message : String(error);
+      lastCommandMessage = `DEX swap failed: ${message}`;
+      appendActivityLog('swap_failed', {
+        direction: command === 'dexbuy' ? 'start' : 'stop',
+        amount: dexAmount.toString(),
+        message,
+      });
     } finally {
       swapInProgress = false;
       renderTui(
@@ -815,8 +717,23 @@ async function main(): Promise<void> {
         swapInProgress
       );
     }
-  };
 
+    return;
+  }
+
+  lastCommandMessage = `Unknown command: ${command}`;
+  renderTui(
+    latestBalances,
+    latestPrices,
+    latestUsdPrices,
+    latestPnl,
+    lastBalanceError,
+    lastPriceError,
+    lastUsdError,
+    lastCommandMessage,
+    swapInProgress
+  );
+};
   rl.on('line', (line) => {
     handleCommand(line).catch((error) => {
       console.error('Command error:', error instanceof Error ? error.message : error);
