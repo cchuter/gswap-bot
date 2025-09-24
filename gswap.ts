@@ -188,7 +188,7 @@ function renderTui(
   console.log('  start               - swap all GALA into GWBTC');
   console.log('  stop                - swap all GWBTC into GALA');
   console.log('  refresh             - force immediate refresh');
-  console.log('  dexbuy <gala>       - create RequestTokenSwap via GalaConnect');
+  console.log('  dexbuy <gala>       - swap GALA → GWBTC using the DEX pool');
   console.log('\nRefresh interval: ' + UPDATE_INTERVAL_MS / 1000 + 's (Ctrl+C to exit)');
 }
 
