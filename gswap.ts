@@ -175,7 +175,11 @@ function renderTui(
   console.log('\nPnL:');
   console.log(`- Realized PnL: $${formatAmount(pnl.realizedUsd, 2)}`);
   const adjustedUnrealized = totalHoldingsUsd.minus(pnl.netCostUsd).minus(pnl.manualAdjustmentUsd);
-  console.log(`- Unrealized PnL (current holdings): $${formatAmount(adjustedUnrealized, 2)}`);
+  const seedUsd = pnl.manualAdjustmentUsd;
+  const percentage = seedUsd.isZero()
+    ? new BigNumber(0)
+    : adjustedUnrealized.dividedBy(seedUsd).multipliedBy(100);
+  console.log(`- Unrealized PnL (current holdings): $${formatAmount(adjustedUnrealized, 2)} (${formatAmount(percentage, 2)}%)`);
   console.log(`- Net hold cost: $${formatAmount(pnl.netCostUsd, 2)}`);
   if (!pnl.manualAdjustmentUsd.isZero()) {
     console.log(`- Adjustment: $${formatAmount(pnl.manualAdjustmentUsd, 2)} (manual)`);
