@@ -172,18 +172,19 @@ function renderTui(
     return galaValue.plus(wbtcValue);
   })();
 
-  console.log('\nPnL:');
-  console.log(`- Realized PnL: $${formatAmount(pnl.realizedUsd, 2)}`);
-  const adjustedUnrealized = totalHoldingsUsd.minus(pnl.netCostUsd).minus(pnl.manualAdjustmentUsd);
-  const seedUsd = pnl.manualAdjustmentUsd;
-  const percentage = seedUsd.isZero()
+  const seed = pnl.manualAdjustmentUsd;
+  const netHoldCost = pnl.netCostUsd;
+  const realizedPnl = pnl.realizedUsd;
+  const unrealizedPnl = totalHoldingsUsd.minus(seed).minus(netHoldCost);
+  const percent = seed.isZero()
     ? new BigNumber(0)
-    : adjustedUnrealized.dividedBy(seedUsd).multipliedBy(100);
-  console.log(`- Unrealized PnL (current holdings): $${formatAmount(adjustedUnrealized, 2)} (${formatAmount(percentage, 2)}%)`);
-  console.log(`- Net hold cost: $${formatAmount(pnl.netCostUsd, 2)}`);
-  if (!pnl.manualAdjustmentUsd.isZero()) {
-    console.log(`- Adjustment: $${formatAmount(pnl.manualAdjustmentUsd, 2)} (manual)`);
-  }
+    : unrealizedPnl.dividedBy(seed).multipliedBy(100);
+
+  console.log('\nPnL:');
+  console.log(`- Realized PnL: $${formatAmount(realizedPnl, 2)}`);
+  console.log(`- Unrealized PnL (current holdings): $${formatAmount(unrealizedPnl, 2)} (${formatAmount(percent, 2)}%)`);
+  console.log(`- Net hold cost: $${formatAmount(netHoldCost, 2)}`);
+  console.log(`- Adjustment: $${formatAmount(seed, 2)} (manual)`);
   console.log(`- Current portfolio value: $${formatAmount(totalHoldingsUsd, 2)}`);
 
   if (lastCommandMessage) {
